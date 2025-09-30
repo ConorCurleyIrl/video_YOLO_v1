@@ -351,7 +351,7 @@ with col1:
 youtube_url = st.session_state.current_url if youtube_url == "" else youtube_url
 if youtube_url != st.session_state.current_url:
     st.session_state.current_url = youtube_url
-youtube_url = st.session_state.current_url
+
 
 with col2:
     cont4 = st.container(border=True)
@@ -373,37 +373,38 @@ st.markdown("---")
 # ===================================================================================
 # MAIN CONTENT AREA - VIDEO & VISUALIZATION
 # ===================================================================================
+cont5 = st.container(border=True)
+with cont5:
+    col2, col3 = st.columns([1, 1])
 
-col2, col3 = st.columns([1, 1])
-
-with col2:
-    cont5 = st.container(border=True)
-    with cont5:
+    with col2:
+        
         st.subheader("🎯 Detection & Tracking Visualization", divider="grey")
         annotated_frame_placeholder = st.empty()
         st.write("")
 
-with col3:
-    cont6 = st.container(border=True)
-    with cont6:
+    with col3:
+        
+        # Time series graph for Pedestrian  
         st.subheader("📈 Pedestrian Count Over Time", divider="grey")
         time_series_placeholder = st.empty()
         st.write("")
+
         
 
-# Summary text
-summary_placeholder = st.empty()
-summary_placeholder.markdown("**No analysis running. Configure settings and start analysis.**")
-summary_placeholder.markdown("---")
+    # Summary text
+    summary_placeholder = st.empty()
+    summary_placeholder.markdown("**No analysis running. Configure settings and start analysis.**")
+    summary_placeholder.markdown("---")
 
-# Top metrics
-col_metric1, col_metric2, col_metric3, col_metric4 = st.columns(4)
-unique_metric = col_metric1.metric("🆔 Unique People (Session)", 0, help="Total unique individuals tracked")
-current_metric = col_metric2.metric("👁️ Currently Visible", 0, help="People currently in frame")
-peak_metric = col_metric3.metric("📈 Peak Count", 0, help="Maximum people visible at once")
-rate_metric = col_metric4.metric("⚡ Rate (people/min)", "0.0", help="Average unique people per minute")
+    # Top metrics
+    col_metric1, col_metric2, col_metric3, col_metric4 = st.columns(4)
+    unique_metric = col_metric1.metric("🆔 Unique People (Session)", 0, help="Total unique individuals tracked")
+    current_metric = col_metric2.metric("👁️ Currently Visible", 0, help="People currently in frame")
+    peak_metric = col_metric3.metric("📈 Peak Count", 0, help="Maximum people visible at once")
+    rate_metric = col_metric4.metric("⚡ Rate (people/min)", "0.0", help="Average unique people per minute")
 
-st.markdown("---")
+    st.markdown("---")
 
 # ===================================================================================
 # CONTROL BUTTONS
@@ -447,7 +448,7 @@ with cont7:
         st.session_state.unique_people_count = 0
         summary_placeholder.markdown("**Data cleared. Configure settings and start analysis.**")
         annotated_frame_placeholder.empty()
-
+        st.session_state.clear()
         st.rerun()
 
 st.markdown("---")
@@ -755,6 +756,9 @@ def run_analysis():
                     'timestamp': timestamp,
                     'count': current_people,
                 })
+
+                #car counter
+
                 
                 # Update time series graph
                 if len(st.session_state.time_series_data) > 1:
@@ -765,6 +769,7 @@ def run_analysis():
                         ts_df.set_index('timestamp')[['count', 'moving_avg']],
                         use_container_width=True
                     )
+
                 
                 # Add to tracking history
                 tracking_entry = {

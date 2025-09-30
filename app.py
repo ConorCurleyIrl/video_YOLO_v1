@@ -48,6 +48,8 @@ if 'tracking_history' not in st.session_state:
     st.session_state.tracking_history = []
 if 'time_series_data' not in st.session_state:
     st.session_state.time_series_data = deque(maxlen=500)
+if 'object_time_series' not in st.session_state:
+    st.session_state.object_time_series = deque(maxlen=500)
 if 'unique_people_count' not in st.session_state:
     st.session_state.unique_people_count = 0
 
@@ -164,24 +166,22 @@ class SimpleTracker:
 # ===================================================================================
 # HEADER & TITLE
 # ===================================================================================
-#centre
 st.markdown("<h1 style='text-align: center;'>🚶 Live Video Analyzer with Tracking</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center;'>Analyze YouTube live streams with YOLO object detection and track unique pedestrians over time</p>", unsafe_allow_html=True)
+
+if 'heatmap_data' not in st.session_state:
+    st.session_state.heatmap_data = []
+if 'heatmap_enabled' not in st.session_state:
+    st.session_state.heatmap_enabled = False
 
 
 # ===================================================================================
 # SIDEBAR - CONFIGURATION
 # ===================================================================================
 
-
 with st.sidebar:
     
     st.markdown("<h2 style='text-align: center; color: #FF6347;'>Step 1: Configure Settings</h2>", unsafe_allow_html=True)
-
-    # -------------------------------------------------------------------------------
-    # Stream Selection
-    # -------------------------------------------------------------------------------
-   
     
     # -------------------------------------------------------------------------------
     # Performance Settings
@@ -194,7 +194,7 @@ with st.sidebar:
             "Frame Skip", 
             min_value=1, 
             max_value=10, 
-            value=3,
+            value=1,
             help="Process every Nth frame. Higher = faster but less frequent updates"
         )
         
@@ -202,18 +202,67 @@ with st.sidebar:
             "Image Resize Factor", 
             min_value=0.25, 
             max_value=1.0, 
-            value=0.5, 
+            value=0.25, 
             step=0.25,
             help="Resize frames before processing. Lower = faster but less accurate"
         )
         
         model_size = st.selectbox(
             "YOLO Model Size", 
-            options=["yolov8n.pt", "yolov8s.pt", "yolov8m.pt"],
+            options=["yolov8n.pt", "yolov8s.pt", "yolov8m.pt", "yolov10n.pt", "yolov10s.pt", "yolov10m.pt", "yolo11n.pt", "yolo11s.pt", "yolo11m.pt"],
             index=0,
-            help="n=fastest, s=balanced, m=most accurate"
+            help="v8=stable, v10=faster, v11=newest & most accurate"
         )
-        
+        tracker_type = st.selectbox(
+            "Tracking Algorithm",
+            options=["Custom", "ByteTrack", "BoT-SORT"],
+            index=1,
+            help="ByteTrack = fast & robust, BoT-SORT = most accurate"
+        )
+
+
+        heatmap_enabled = st.checkbox("Generate Heatmap", value=False, help="Track object concentration areas")
+        heatmap_object_type = st.selectbox(
+            "Heatmap Object Type",
+            options=["person", "car", "bicycle", "all"],
+            index=0,
+            help="Which objects to include in heatmap"
+        )
+        heatmap_decay = st.slider(
+            "Heatmap Decay Factor",
+            min_value=0.90,
+            max_value=0.99,
+            value=0.95,
+            step=0.01,
+            help="How quickly heat fades (higher = longer lasting)"
+        )
+
+
+        # Update model size help text to be more specific
+        exp1 = st.expander("Model Details", expanded=False)
+        with exp1:
+            st.markdown("""
+                **YOLOv8**: Stable and reliable for most tasks
+                - v8n: 6MB, ~45 FPS, good for real-time
+                - v8s: 22MB, ~35 FPS, balanced performance  
+                - v8m: 50MB, ~25 FPS, higher accuracy
+                
+                **YOLOv10**: Optimized for speed (20-30% faster inference)
+                - v10n: 5MB, ~60 FPS, fastest option
+                - v10s: 16MB, ~45 FPS, good balance
+                - v10m: 32MB, ~35 FPS, accurate & fast
+                
+                **YOLOv11**: Latest with best accuracy (10-15% improvement)
+                - v11n: 5MB, ~50 FPS, newest nano
+                - v11s: 20MB, ~40 FPS, best overall choice
+                - v11m: 45MB, ~30 FPS, most accurate
+                
+                **Size Guidelines:**
+                - n (nano) = smallest, fastest, least accurate
+                - s (small) = balanced speed and accuracy  
+                - m (medium) = larger, slower, more accurate
+            """)
+
         analysis_interval = st.slider(
             "Analysis Interval (seconds)", 
             min_value=1, 
@@ -222,7 +271,6 @@ with st.sidebar:
             help="How often to analyze frames"
         )
     
-     
     # -------------------------------------------------------------------------------
     # Tracking Settings
     # -------------------------------------------------------------------------------
@@ -252,8 +300,6 @@ with st.sidebar:
             value=30,
             help="Frames before considering object as left scene"
         )
-        
-
         
         # -------------------------------------------------------------------------------
         # Detection Filters
@@ -289,12 +335,10 @@ with st.sidebar:
         }
 
 # ===================================================================================
-# MAIN CONTENT AREA - TOP METRICS
+# MAIN CONTENT AREA - STREAM SELECTION
 # ===================================================================================
 
-
 st.markdown("<h2 style='text-align: center; color: #FF6347;'>Step 2: Select Live Stream for Analysis</h2>", unsafe_allow_html=True)
-
 
 preset_streams = {
     "Dublin, Ireland - Temple Bar": "https://www.youtube.com/watch?v=u4UZ4UvZXrg",
@@ -302,16 +346,11 @@ preset_streams = {
     "London, UK - Abbey Road": "https://www.youtube.com/watch?v=57w2gYXjRic",
     "Sydney, Australia - Harbour Bridge": "https://www.youtube.com/watch?v=5uZa3-RMFos"
 }
+
 if 'current_url' not in st.session_state:
     st.session_state.current_url = ""
 
-# Quick select buttons
-
-
 col1, col2 = st.columns([1,1])
-
-# Manual URL input
-
 
 with col1:
     cont3 = st.container(border=True)
@@ -324,16 +363,13 @@ with col1:
             st.session_state.current_url = preset_streams["Dublin, Ireland - Temple Bar"]
             st.rerun()
 
-
         if st.button(":bus: London - Abbey Road", use_container_width=True):
             st.session_state.current_url = preset_streams["London, UK - Abbey Road"]
             st.rerun()
 
-
         if st.button("🚃 Melbourne - Intersection", use_container_width=True):
             st.session_state.current_url = preset_streams["Melbourne, Australia - Intersection"]
             st.rerun()
-
 
         if st.button(":ship: Sydney - Harbour Bridge", use_container_width=True):
             st.session_state.current_url = preset_streams["Sydney, Australia - Harbour Bridge"]
@@ -352,7 +388,6 @@ youtube_url = st.session_state.current_url if youtube_url == "" else youtube_url
 if youtube_url != st.session_state.current_url:
     st.session_state.current_url = youtube_url
 
-
 with col2:
     cont4 = st.container(border=True)
     with cont4:
@@ -370,27 +405,24 @@ with col2:
         st.write("")
 
 st.markdown("---")
+
 # ===================================================================================
 # MAIN CONTENT AREA - VIDEO & VISUALIZATION
 # ===================================================================================
+
 cont5 = st.container(border=True)
 with cont5:
     col2, col3 = st.columns([1, 1])
 
     with col2:
-        
         st.subheader("🎯 Detection & Tracking Visualization", divider="grey")
         annotated_frame_placeholder = st.empty()
         st.write("")
 
     with col3:
-        
-        # Time series graph for Pedestrian  
-        st.subheader("📈 Pedestrian Count Over Time", divider="grey")
+        st.subheader("📈 Object Counts Over Time", divider="grey")
         time_series_placeholder = st.empty()
         st.write("")
-
-        
 
     # Summary text
     summary_placeholder = st.empty()
@@ -409,8 +441,8 @@ with cont5:
 # ===================================================================================
 # CONTROL BUTTONS
 # ===================================================================================
-st.markdown("<h2 style='text-align: center; color: #FF6347;'>Step 3: Start Analysis</h2>", unsafe_allow_html=True)
 
+st.markdown("<h2 style='text-align: center; color: #FF6347;'>Step 3: Start Analysis</h2>", unsafe_allow_html=True)
 
 st.subheader("▶️ Control Panel", divider="grey")
 
@@ -445,10 +477,10 @@ with cont7:
         st.session_state.all_detections_df = pd.DataFrame()
         st.session_state.tracking_history = []
         st.session_state.time_series_data = deque(maxlen=500)
+        st.session_state.object_time_series = deque(maxlen=500)
         st.session_state.unique_people_count = 0
         summary_placeholder.markdown("**Data cleared. Configure settings and start analysis.**")
         annotated_frame_placeholder.empty()
-        st.session_state.clear()
         st.rerun()
 
 st.markdown("---")
@@ -457,9 +489,7 @@ st.markdown("---")
 # DATA TABS
 # ===================================================================================
 
-# Center and colour the step sub header
 st.markdown("<h2 style='text-align: center; color: #FF6347;'>Step 4: Explore Data & Export Results</h2>", unsafe_allow_html=True)
-
 
 st.subheader("📊 Detailed Analysis", divider="grey")
 tab1, tab2, tab3 = st.tabs(["📋 Tracking History", "📊 Detection Data", "📈 Statistics"])
@@ -566,38 +596,212 @@ def analyze_frame(frame, model, filters, conf_threshold, resize_factor):
     
     return detections, detailed_detections, person_centroids
 
-def draw_tracking_visualization(frame, tracker):
+def analyze_frame_with_tracking(frame, model, filters, conf_threshold, resize_factor, tracker_type):
     """
-    Draw tracking IDs and bounding boxes on frame.
+    Enhanced frame analysis with built-in tracking support.
+    """
+    # Resize frame for faster processing
+    if resize_factor < 1.0:
+        height, width = frame.shape[:2]
+        new_width = int(width * resize_factor)
+        new_height = int(height * resize_factor)
+        frame_resized = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+        scale_x = width / new_width
+        scale_y = height / new_height
+    else:
+        frame_resized = frame
+        scale_x = scale_y = 1.0
     
-    Args:
-        frame: Input video frame
-        tracker: SimpleTracker instance
-        
-    Returns:
-        Annotated frame with tracking visualization
+    # Run YOLO with tracking if selected
+    if tracker_type == "ByteTrack":
+        results = model.track(frame_resized, conf=conf_threshold, tracker="bytetrack.yaml", verbose=False)[0]
+    elif tracker_type == "BoT-SORT":
+        results = model.track(frame_resized, conf=conf_threshold, tracker="botsort.yaml", verbose=False)[0]
+    else:
+        results = model(frame_resized, conf=conf_threshold, verbose=False)[0]
+    
+    detections = {}
+    detailed_detections = []
+    person_centroids = []
+    tracked_objects = {}
+    
+    # Process each detection
+    if results.boxes is not None:
+        for i, box in enumerate(results.boxes):
+            class_id = int(box.cls[0])
+            class_name = results.names[class_id]
+            confidence = float(box.conf[0])
+            
+            # Check if this object type should be detected
+            if class_name in filters and filters[class_name]:
+                if class_name not in detections:
+                    detections[class_name] = 0
+                detections[class_name] += 1
+                
+                # Get bounding box and scale back to original size
+                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                x1, y1, x2, y2 = int(x1 * scale_x), int(y1 * scale_y), int(x2 * scale_x), int(y2 * scale_y)
+                
+                # Calculate center point
+                center_x = (x1 + x2) // 2
+                center_y = (y1 + y2) // 2
+                area = (x2 - x1) * (y2 - y1)
+                
+                # Get tracking ID if available
+                track_id = None
+                if hasattr(box, 'id') and box.id is not None:
+                    track_id = int(box.id[0])
+                    if class_name == 'person':
+                        tracked_objects[track_id] = (center_x, center_y)
+                
+                # Collect person centroids for custom tracking fallback
+                if class_name == 'person':
+                    person_centroids.append((center_x, center_y))
+                
+                # Store detailed detection info
+                detection_info = {
+                    'object_type': class_name,
+                    'confidence': confidence,
+                    'confidence_pct': f"{confidence:.1%}",
+                    'bbox_x1': x1,
+                    'bbox_y1': y1,
+                    'bbox_x2': x2,
+                    'bbox_y2': y2,
+                    'center_x': center_x,
+                    'center_y': center_y,
+                    'width': x2 - x1,
+                    'height': y2 - y1,
+                    'area_pixels': area,
+                    'track_id': track_id
+                }
+                detailed_detections.append(detection_info)
+    
+    return detections, detailed_detections, person_centroids, tracked_objects
+
+def update_heatmap(detailed_detections, frame_shape, object_type="person"):
+    """Update heatmap data with new detections"""
+    if 'heatmap_accumulator' not in st.session_state:
+        st.session_state.heatmap_accumulator = np.zeros((frame_shape[0]//4, frame_shape[1]//4), dtype=np.float32)
+    
+    # Decay existing heatmap
+    st.session_state.heatmap_accumulator *= heatmap_decay
+    
+    # Add new detections
+    for det in detailed_detections:
+        if object_type == "all" or det['object_type'] == object_type:
+            # Scale coordinates to heatmap size
+            hx = int(det['center_x'] // 4)
+            hy = int(det['center_y'] // 4)
+            
+            if 0 <= hx < st.session_state.heatmap_accumulator.shape[1] and 0 <= hy < st.session_state.heatmap_accumulator.shape[0]:
+                # Add gaussian blob around detection
+                for dy in range(-3, 4):
+                    for dx in range(-3, 4):
+                        nx, ny = hx + dx, hy + dy
+                        if 0 <= nx < st.session_state.heatmap_accumulator.shape[1] and 0 <= ny < st.session_state.heatmap_accumulator.shape[0]:
+                            distance = np.sqrt(dx*dx + dy*dy)
+                            intensity = np.exp(-distance/2) * det['confidence']
+                            st.session_state.heatmap_accumulator[ny, nx] += intensity
+
+def create_heatmap_overlay(frame, heatmap_data, alpha=0.6):
+    """Create heatmap overlay on frame"""
+    if heatmap_data.max() == 0:
+        return frame
+    
+    # Normalize and resize heatmap to frame size
+    normalized = (heatmap_data / heatmap_data.max() * 255).astype(np.uint8)
+    heatmap_resized = cv2.resize(normalized, (frame.shape[1], frame.shape[0]))
+    
+    # Apply colormap
+    heatmap_colored = cv2.applyColorMap(heatmap_resized, cv2.COLORMAP_JET)
+    
+    # Blend with original frame
+    return cv2.addWeighted(frame, 1-alpha, heatmap_colored, alpha, 0)
+def draw_enhanced_visualization(frame, tracker, detailed_detections, tracked_objects=None, show_heatmap=False):
+    """
+    Enhanced visualization with built-in tracking support and heatmap overlay.
     """
     annotated_frame = frame.copy()
     
-    # Draw each tracked object
-    for object_id, centroid in tracker.objects.items():
-        # Draw centroid
-        cv2.circle(annotated_frame, tuple(map(int, centroid)), 8, (0, 255, 0), -1)
+    # Add heatmap overlay if enabled
+    if show_heatmap and 'heatmap_accumulator' in st.session_state:
+        annotated_frame = create_heatmap_overlay(annotated_frame, st.session_state.heatmap_accumulator)
+    
+    # Define colors for different object types
+    colors = {
+        'person': (0, 255, 0),      # Green
+        'car': (255, 0, 0),          # Blue
+        'bicycle': (0, 255, 255),    # Yellow
+        'motorcycle': (255, 0, 255), # Magenta
+        'bus': (255, 128, 0),        # Orange
+        'truck': (128, 0, 255),      # Purple
+        'boat': (0, 128, 255),       # Light Blue
+    }
+    
+    # Draw all detected objects with bounding boxes and labels
+    for det in detailed_detections:
+        x1, y1, x2, y2 = det['bbox_x1'], det['bbox_y1'], det['bbox_x2'], det['bbox_y2']
+        obj_type = det['object_type']
+        confidence = det['confidence']
+        track_id = det.get('track_id')
         
-        # Draw ID label
-        text = f"ID: {object_id}"
+        # Get color for this object type
+        color = colors.get(obj_type, (255, 255, 255))  # White for unknown types
         
-        # Background for text
-        (text_width, text_height), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-        cv2.rectangle(annotated_frame, 
-                     (int(centroid[0]) - 5, int(centroid[1]) - text_height - 25),
-                     (int(centroid[0]) + text_width + 5, int(centroid[1]) - 15),
-                     (0, 255, 0), -1)
+        # Draw bounding box
+        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
         
-        # Text
-        cv2.putText(annotated_frame, text, 
-                   (int(centroid[0]), int(centroid[1]) - 20),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        # Create label with object type, confidence, and track ID
+        if track_id is not None:
+            label = f"{obj_type} ID:{track_id}: {confidence:.2f}"
+        else:
+            label = f"{obj_type}: {confidence:.2f}"
+        
+        # Get label size
+        (label_width, label_height), baseline = cv2.getTextSize(
+            label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2
+        )
+        
+        # Draw label background
+        cv2.rectangle(
+            annotated_frame,
+            (x1, y1 - label_height - baseline - 5),
+            (x1 + label_width, y1),
+            color,
+            -1
+        )
+        
+        # Draw label text
+        cv2.putText(
+            annotated_frame,
+            label,
+            (x1, y1 - baseline - 5),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (255, 255, 255),
+            2
+        )
+        
+        # Draw tracking trail for people if using built-in tracking
+        if track_id is not None and obj_type == 'person':
+            cv2.circle(annotated_frame, (det['center_x'], det['center_y']), 4, (0, 255, 0), -1)
+    
+    # Draw custom tracker objects if using custom tracking
+    if tracker is not None:
+        for object_id, centroid in tracker.objects.items():
+            cv2.circle(annotated_frame, tuple(map(int, centroid)), 6, (0, 255, 0), -1)
+            
+            track_text = f"ID:{object_id}"
+            (text_width, text_height), _ = cv2.getTextSize(track_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+            
+            cv2.rectangle(annotated_frame, 
+                         (int(centroid[0]) - 5, int(centroid[1]) + 10),
+                         (int(centroid[0]) + text_width + 5, int(centroid[1]) + text_height + 15),
+                         (0, 255, 0), -1)
+            
+            cv2.putText(annotated_frame, track_text, 
+                       (int(centroid[0]), int(centroid[1]) + text_height + 10),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
     
     return annotated_frame
 
@@ -680,17 +884,35 @@ def run_analysis():
                 processed_count += 1
                 timestamp = datetime.now()
                 
-                # Run YOLO detection
-                detections, detailed, person_centroids = analyze_frame(
-                    frame, model, detection_filters, confidence_threshold, resize_factor
+                # Run YOLO detection with enhanced tracking
+                detections, detailed, person_centroids, tracked_objects = analyze_frame_with_tracking(
+                    frame, model, detection_filters, confidence_threshold, resize_factor, tracker_type
                 )
                 
-                # Update tracker with person detections
-                if track_people_only:
-                    tracker.update(person_centroids, timestamp)
+                # Update heatmap if enabled
+                if heatmap_enabled:
+                    update_heatmap(detailed, frame.shape, heatmap_object_type)
                 
-                # Draw tracking visualization
-                annotated_frame = draw_tracking_visualization(frame, tracker)
+                # Update tracker with person detections (only for custom tracking)
+                if track_people_only and tracker_type == "Custom":
+                    tracker.update(person_centroids, timestamp)
+                    current_people = len(tracker.objects)
+                    seen_ids.update(tracker.objects.keys())
+                else:
+                    # Use built-in tracking results
+                    person_tracks = {tid: pos for tid, pos in tracked_objects.items()}
+                    current_people = len(person_tracks)
+                    seen_ids.update(person_tracks.keys())
+                
+                # Draw enhanced visualization
+                if tracker_type == "Custom":
+                    annotated_frame = draw_enhanced_visualization(
+                        frame, tracker, detailed, show_heatmap=heatmap_enabled
+                    )
+                else:
+                    annotated_frame = draw_enhanced_visualization(
+                        frame, None, detailed, tracked_objects, show_heatmap=heatmap_enabled
+                    )
                 
                 # Resize for display if needed
                 if annotated_frame.shape[1] > 800:
@@ -751,25 +973,57 @@ def run_analysis():
                 
                 summary_placeholder.markdown(summary_text)
                 
-                # Add to time series data
+                # Add to time series data - track all object types
                 st.session_state.time_series_data.append({
                     'timestamp': timestamp,
                     'count': current_people,
                 })
-
-                #car counter
-
                 
-                # Update time series graph
-                if len(st.session_state.time_series_data) > 1:
-                    ts_df = pd.DataFrame(list(st.session_state.time_series_data))
-                    ts_df['moving_avg'] = ts_df['count'].rolling(window=5, min_periods=1).mean()
+                # Track all detected objects
+                object_counts = {
+                    'timestamp': timestamp,
+                    'person': detections.get('person', 0),
+                    'car': detections.get('car', 0),
+                    'bicycle': detections.get('bicycle', 0),
+                    'motorcycle': detections.get('motorcycle', 0),
+                    'bus': detections.get('bus', 0),
+                    'truck': detections.get('truck', 0),
+                    'boat': detections.get('boat', 0),
+                }
+                st.session_state.object_time_series.append(object_counts)
+                
+                # Update time series graph with multiple object types
+                if len(st.session_state.object_time_series) > 1:
+                    obj_df = pd.DataFrame(list(st.session_state.object_time_series))
                     
-                    time_series_placeholder.line_chart(
-                        ts_df.set_index('timestamp')[['count', 'moving_avg']],
-                        use_container_width=True
-                    )
-
+                    # Create a dataframe with only non-zero columns for cleaner display
+                    plot_columns = []
+                    for col in ['person', 'car', 'bicycle', 'motorcycle', 'bus', 'truck', 'boat']:
+                        if obj_df[col].sum() > 0:  # Only include if detected at least once
+                            plot_columns.append(col)
+                    
+                    if plot_columns:
+                        time_series_placeholder.line_chart(
+                            obj_df.set_index('timestamp')[plot_columns],
+                            use_container_width=True
+                        )
+                    else:
+                        time_series_placeholder.info("No objects detected yet")
+                elif len(st.session_state.object_time_series) == 1:
+                    # Show initial data point
+                    obj_df = pd.DataFrame(list(st.session_state.object_time_series))
+                    plot_columns = []
+                    for col in ['person', 'car', 'bicycle', 'motorcycle', 'bus', 'truck', 'boat']:
+                        if obj_df[col].sum() > 0:
+                            plot_columns.append(col)
+                    
+                    if plot_columns:
+                        time_series_placeholder.line_chart(
+                            obj_df.set_index('timestamp')[plot_columns],
+                            use_container_width=True
+                        )
+                else:
+                    time_series_placeholder.info("Waiting for data...")
                 
                 # Add to tracking history
                 tracking_entry = {
@@ -971,6 +1225,8 @@ with st.expander("ℹ️ How to Use This Application"):
       - `yolov8n.pt` - Fastest, good for real-time
       - `yolov8s.pt` - Balanced speed and accuracy
       - `yolov8m.pt` - Most accurate, slower
+      - `yolov10n.pt` - Faster inference than v8
+      - `yolov11n.pt` - Newest, most accurate
     
     **Tracking Settings:**
     - **Track People Only**: Recommended for pedestrian analysis
@@ -994,9 +1250,15 @@ with st.expander("ℹ️ How to Use This Application"):
     - 📈 **Peak Count**: Maximum people visible at any moment
     - ⚡ **Rate**: Average unique people per minute
     
+    **Detection Visualization:**
+    - Color-coded bounding boxes for each object type
+    - Labels showing object type and confidence score
+    - Green tracking IDs for tracked pedestrians
+    
     **Time Series Graph:**
-    - Blue line: Current people count
-    - Orange line: 5-point moving average (smoothed)
+    - Shows counts over time for all detected object types
+    - Each object type gets its own line (person, car, bicycle, etc.)
+    - Only displays object types that have been detected
     
     **Three Data Tabs:**
     1. **Tracking History**: Timestamped log of people counts
@@ -1013,12 +1275,12 @@ with st.expander("ℹ️ How to Use This Application"):
     - Use lower frame skip (1-2)
     - Use higher resize factor (0.75-1.0)
     - Increase max tracking distance in crowded scenes (150-200)
-    - Use yolov8s or yolov8m model
+    - Use yolov8s, yolov10s, or yolo11s model
     
     ### For Fast Performance:
     - Use higher frame skip (3-5)
     - Use lower resize factor (0.25-0.5)
-    - Use yolov8n model
+    - Use yolov8n, yolov10n, or yolo11n model
     - Increase analysis interval (5-10 seconds)
     
     ### For Crowded Scenes:
@@ -1041,7 +1303,7 @@ with st.expander("ℹ️ How to Use This Application"):
     **Problem: Analysis is too slow**
     - Increase frame skip to 5-10
     - Reduce resize factor to 0.25
-    - Use yolov8n model
+    - Use yolov8n or yolov10n model
     - Increase analysis interval to 5-10 seconds
     
     **Problem: Tracking loses people**
@@ -1051,7 +1313,7 @@ with st.expander("ℹ️ How to Use This Application"):
     
     **Problem: Too many false detections**
     - Increase confidence threshold
-    - Use a larger model (yolov8s or yolov8m)
+    - Use a larger model (yolov8s, yolov10s, or yolo11s)
     - Uncheck object types you don't need
     
     ## 📊 Understanding the Data

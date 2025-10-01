@@ -18,9 +18,8 @@ Author: Created by Conor Curley | LinkedIn: https://www.linkedin.com/in/ccurleyd
 License: MIT License
 ===================================================================================
 """
-
-import streamlit as st
 import cv2
+import streamlit as st
 import numpy as np
 from ultralytics import YOLO
 import yt_dlp

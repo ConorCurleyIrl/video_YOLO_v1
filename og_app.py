@@ -2,35 +2,57 @@
 ===================================================================================
 STREET TRAFFIC ANALYZER WITH OBJECT TRACKING
 ===================================================================================
-A Streamlit application for analyzing YouTube live streams using YOLO object detection
-and tracking unique pedestrians over time.
-
-Features:
-- Real-time object detection (people, vehicles, boats, etc.)
-- Deep SORT tracking with appearance features
-- Temporal consistency and prediction
-- Enhanced detection filtering
-- Time-series analytics
-- Detailed logging and statistics
-- CSV export capabilities
-
-Author: Created by Conor Curley | LinkedIn: https://www.linkedin.com/in/ccurleyds/
-License: MIT License
-===================================================================================
 """
-import cv2
-import streamlit as st
-import numpy as np
-from ultralytics import YOLO
-import yt_dlp
-from PIL import Image
-import time
-from datetime import datetime
-import pandas as pd
-from collections import deque, defaultdict
-import torch
-import torchvision
+import os
+import sys
+import subprocess
 
+# Environment setup for cloud deployment
+os.environ['OPENCV_IO_ENABLE_JASPER'] = '1'
+os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+
+def install_missing_packages():
+    """Install missing packages with proper error handling"""
+    packages_to_install = []
+    
+    # Check for OpenCV
+    try:
+        import cv2
+    except ImportError:
+        packages_to_install.append('opencv-python-headless')
+    
+    # Install missing packages
+    if packages_to_install:
+        for package in packages_to_install:
+            try:
+                print(f"📦 Installing {package}...")
+                subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+                print(f"✅ {package} installed successfully")
+            except subprocess.CalledProcessError as e:
+                print(f"❌ Failed to install {package}: {e}")
+
+# Install missing packages
+install_missing_packages()
+
+# Now import all required packages
+try:
+    import cv2
+    import streamlit as st
+    import numpy as np
+    from ultralytics import YOLO
+    import yt_dlp
+    from PIL import Image
+    import time
+    from datetime import datetime
+    import pandas as pd
+    from collections import deque, defaultdict
+    import torch
+    import torchvision
+    print("✅ All packages imported successfully")
+except ImportError as e:
+    st.error(f"❌ Import error: {e}")
+    st.info("Please install missing packages using: pip install opencv-python-headless ultralytics streamlit")
+    st.stop()
 # ===================================================================================
 # PAGE CONFIGURATION
 # ===================================================================================

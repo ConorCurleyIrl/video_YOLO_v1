@@ -584,8 +584,8 @@ with st.sidebar:
             "Detection Confidence Threshold", 
             min_value=0.1, 
             max_value=0.9, 
-            value=st.session_state.get('confidence_threshold_default', 0.5), 
-            step=0.05,
+            value=st.session_state.get('confidence_threshold_default', 0.1), 
+            step=0.1,
             help="Minimum confidence for detections (higher = fewer false positives)"
         )
         
@@ -633,8 +633,141 @@ with st.sidebar:
             'truck': detect_truck,
             'boat': detect_boat,
         }
-    
-    
+        # Add this after your current detection filters section
+        with st.expander("🔍 **View All Detectable Objects** (80+ object types available)", expanded=False):
+            st.markdown("### 🎯 **Complete YOLO Detection Capabilities**")
+            st.info("💡 **Currently using 7 objects optimized for traffic analysis**. Additional objects can be enabled for specialized use cases.")
+            
+            # Create organized tabs for different categories
+            tab_transport, tab_urban, tab_people, tab_animals, tab_other = st.tabs([
+                "🚗 Transportation", "🏙️ Urban & Infrastructure", "👥 People & Items", "🐾 Animals", "🔧 Other Objects"
+            ])
+            
+            with tab_transport:
+                st.markdown("#### 🚗 Transportation & Vehicles")
+                transport_col1, transport_col2 = st.columns(2)
+                
+                with transport_col1:
+                    st.markdown("**✅ Currently Enabled:**")
+                    st.markdown("""
+                    - 👥 **person** - Pedestrians
+                    - 🚗 **car** - Automobiles  
+                    - 🚲 **bicycle** - Bikes
+                    - 🏍️ **motorcycle** - Motorcycles
+                    """)
+                
+                with transport_col2:
+                    st.markdown("**🔧 Available Options:**")
+                    st.markdown("""
+                    - 🚌 **bus** - Public buses ✅
+                    - 🚛 **truck** - Trucks/lorries ✅  
+                    - ⛵ **boat** - Watercraft ✅
+                    - ✈️ **airplane** - Aircraft
+                    - 🚂 **train** - Trains/locomotives
+                    - 🛹 **skateboard** - Alternative transport
+                    """)
+            
+            with tab_urban:
+                st.markdown("#### 🏙️ Urban Infrastructure & Street Elements")
+                urban_col1, urban_col2 = st.columns(2)
+                
+                with urban_col1:
+                    st.markdown("**🚦 Traffic Management:**")
+                    st.markdown("""
+                    - 🚦 **traffic light** - Signal analysis
+                    - 🛑 **stop sign** - Traffic control
+                    - 🅿️ **parking meter** - Parking zones
+                    """)
+                    st.markdown("**🏗️ Street Furniture:**")
+                    st.markdown("""
+                    - 🪑 **bench** - Seating areas
+                    - 🚒 **fire hydrant** - Safety infrastructure
+                    - 🕐 **clock** - Public displays
+                    """)
+                
+                with urban_col2:
+                    st.markdown("**💡 High Value for Traffic Analysis:**")
+                    st.info("""
+                    **🚦 Traffic Lights** - Monitor signal compliance
+                    **🛑 Stop Signs** - Track intersection behavior  
+                    **🪑 Benches** - Identify waiting/rest areas
+                    **🚒 Fire Hydrants** - Map street infrastructure
+                    """)
+            
+            with tab_people:
+                st.markdown("#### 👥 People & Personal Items")
+                people_col1, people_col2 = st.columns(2)
+                
+                with people_col1:
+                    st.markdown("**👜 Personal Items:**")
+                    st.markdown("""
+                    - 🎒 **backpack** - Student/commuter tracking
+                    - 👜 **handbag** - Personal belongings
+                    - 🧳 **suitcase** - Travel behavior
+                    - ☂️ **umbrella** - Weather response
+                    - 📱 **cell phone** - Device usage
+                    """)
+                
+                with people_col2:
+                    st.markdown("**🍕 Food & Beverages:**")
+                    st.markdown("""
+                    - 🍼 **bottle** - Beverage containers
+                    - ☕ **cup** - Drinks
+                    - 🍎 **apple, banana, orange** - Fruits
+                    - 🥪 **sandwich** - Street food
+                    - 🍕 **pizza, hot dog** - Fast food
+                    """)
+            
+            with tab_animals:
+                st.markdown("#### 🐾 Animals & Wildlife")
+                animal_col1, animal_col2 = st.columns(2)
+                
+                with animal_col1:
+                    st.markdown("**🏙️ Urban Animals:**")
+                    st.markdown("""
+                    - 🐕 **dog** - Pet tracking
+                    - 🐱 **cat** - Stray/pet cats
+                    - 🐦 **bird** - Urban wildlife
+                    """)
+                
+                with animal_col2:
+                    st.markdown("**🌿 Other Animals:**")
+                    st.markdown("""
+                    - 🐎 **horse** - Mounted police/transport
+                    - 🐄 **cow, sheep** - Livestock
+                    - 🐘 **elephant, zebra, giraffe** - Zoo/safari
+                    - 🐻 **bear** - Wildlife areas
+                    """)
+            
+            with tab_other:
+                st.markdown("#### 🔧 Other Detectable Objects")
+                other_col1, other_col2 = st.columns(2)
+                
+                with other_col1:
+                    st.markdown("**⚽ Sports & Recreation:**")
+                    st.markdown("""
+                    - ⚽ **sports ball** - Various balls
+                    - 🪁 **kite** - Park activities  
+                    - ⚾ **baseball bat/glove** - Sports
+                    - 🎾 **tennis racket** - Court sports
+                    - 🏄 **surfboard** - Water sports
+                    - 🎿 **skis, snowboard** - Winter sports
+                    """)
+                
+                with other_col2:
+                    st.markdown("**🏠 Indoor/Furniture:**")
+                    st.markdown("""
+                    - 📺 **tv** - Outdoor displays
+                    - 💻 **laptop** - Mobile computing
+                    - 🪑 **chair, couch** - Outdoor furniture
+                    - 🍽️ **dining table** - Outdoor dining
+                    - 📚 **book** - Reading materials
+                    - 🧸 **teddy bear** - Toys/entertainment
+                    """)
+            
+            # Usage recommendations
+            st.warning("⚠️ **Performance Note**: More object types = slower processing. Current 7-object configuration is optimized for real-time traffic analysis.")
+            
 
     with st.expander("🚀 Technical Details", expanded=False):
         st.markdown("""

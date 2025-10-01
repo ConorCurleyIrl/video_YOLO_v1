@@ -972,12 +972,12 @@ def analyze_frame(frame, model, filters, conf_threshold, resize_factor, tracker_
                         if hasattr(box, 'id') and box.id is not None:
                             try:
                                 track_id = int(box.id[0])
-                                # Store tracked objects for visualization
-                                if class_name == 'person':
-                                    tracked_objects[track_id] = (center_x, center_y)
-                            except (ValueError, IndexError) as e:
+                                # Store tracked objects for visualization (all objects, not just people)
+                                tracked_objects[track_id] = (center_x, center_y)
+                            except (ValueError, IndexError, TypeError) as e:
                                 # Handle cases where ID extraction fails
                                 track_id = None
+                                
                         
                         # Collect person centroids for custom tracking fallback
                         if class_name == 'person':
@@ -1067,7 +1067,8 @@ def calculate_tracking_quality(tracker, detailed_detections):
     quality_score = (tracking_ratio * 0.4 + confidence_avg * 0.4 + stability_factor * 0.2)
     return quality_score
 
-def draw_enhanced_visualization(frame, tracker, detailed_detections, tracked_objects=None, show_heatmap=False, tracker_type="Enhanced Custom"):
+
+def draw_enhanced_visualization(frame, tracker, detailed_detections, tracked_objects=None, show_heatmap=False, tracker_type="OpenCV"):
     """
     Enhanced visualization with improved visual elements and tracking information.
     """
@@ -1145,34 +1146,80 @@ def draw_enhanced_visualization(frame, tracker, detailed_detections, tracked_obj
             cv2.circle(annotated_frame, (det['center_x'], det['center_y']), 5, (0, 255, 0), -1)
             cv2.circle(annotated_frame, (det['center_x'], det['center_y']), 8, (255, 255, 255), 2)
     
-    # Draw custom tracker objects if using enhanced custom tracking
-    if tracker is not None and hasattr(tracker, 'objects'):
-        for object_id, centroid in tracker.objects.items():
-            # Enhanced tracking visualization
-            cv2.circle(annotated_frame, tuple(map(int, centroid)), 8, (0, 255, 0), -1)
-            cv2.circle(annotated_frame, tuple(map(int, centroid)), 12, (255, 255, 255), 2)
-            
-            track_text = f"ID:{object_id}"
-            (text_width, text_height), _ = cv2.getTextSize(track_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
-            
-            # Enhanced ID label
-            overlay = annotated_frame.copy()
-            cv2.rectangle(overlay, 
-                         (int(centroid[0]) - text_width//2 - 5, int(centroid[1]) + 15),
-                         (int(centroid[0]) + text_width//2 + 5, int(centroid[1]) + text_height + 20),
-                         (0, 255, 0), -1)
-            cv2.addWeighted(overlay, 0.8, annotated_frame, 0.2, 0, annotated_frame)
-            
-            cv2.putText(annotated_frame, track_text, 
-                       (int(centroid[0]) - text_width//2, int(centroid[1]) + text_height + 15),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
+    # FIXED: Handle different tracking types properly
+    if tracker_type == "OpenCV":
+        # Draw custom tracker objects for OpenCV tracking
+        if tracker is not None and hasattr(tracker, 'objects'):
+            for object_id, centroid in tracker.objects.items():
+                # Enhanced tracking visualization
+                cv2.circle(annotated_frame, tuple(map(int, centroid)), 8, (0, 255, 0), -1)
+                cv2.circle(annotated_frame, tuple(map(int, centroid)), 12, (255, 255, 255), 2)
+                
+                track_text = f"ID:{object_id}"
+                (text_width, text_height), _ = cv2.getTextSize(track_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                
+                # Enhanced ID label
+                overlay = annotated_frame.copy()
+                cv2.rectangle(overlay, 
+                             (int(centroid[0]) - text_width//2 - 5, int(centroid[1]) + 15),
+                             (int(centroid[0]) + text_width//2 + 5, int(centroid[1]) + text_height + 20),
+                             (0, 255, 0), -1)
+                cv2.addWeighted(overlay, 0.8, annotated_frame, 0.2, 0, annotated_frame)
+                
+                cv2.putText(annotated_frame, track_text, 
+                           (int(centroid[0]) - text_width//2, int(centroid[1]) + text_height + 15),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
     
-    # Add tracking algorithm indicator
-    algo_text = f"Tracking: {tracker_type}"
+    elif tracker_type in ["ByteTrack (YOLO)", "BoT-SORT (YOLO)"]:
+        # FIXED: Draw tracked objects for ByteTrack/BoT-SORT
+        if tracked_objects is not None and len(tracked_objects) > 0:
+            for track_id, (center_x, center_y) in tracked_objects.items():
+                # Draw tracking indicator - different style from OpenCV
+                cv2.circle(annotated_frame, (center_x, center_y), 6, (0, 255, 255), -1)  # Yellow center
+                cv2.circle(annotated_frame, (center_x, center_y), 10, (255, 255, 255), 2)  # White border
+                cv2.circle(annotated_frame, (center_x, center_y), 14, (0, 255, 255), 1)   # Outer yellow ring
+                
+                # Draw track ID with distinctive style
+                track_text = f"T:{track_id}"
+                (text_width, text_height), _ = cv2.getTextSize(track_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                
+                # Enhanced ID label for YOLO trackers - different color
+                overlay = annotated_frame.copy()
+                cv2.rectangle(overlay, 
+                             (center_x - text_width//2 - 5, center_y + 18),
+                             (center_x + text_width//2 + 5, center_y + text_height + 23),
+                             (0, 255, 255), -1)  # Yellow background
+                cv2.addWeighted(overlay, 0.9, annotated_frame, 0.1, 0, annotated_frame)
+                
+                cv2.putText(annotated_frame, track_text, 
+                           (center_x - text_width//2, center_y + text_height + 18),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+    
+    # Add tracking algorithm indicator with track count
+    if tracker_type == "OpenCV" and tracker is not None and hasattr(tracker, 'objects'):
+        track_count = len(tracker.objects)
+        algo_text = f"Tracking: {tracker_type} ({track_count} active)"
+    elif tracked_objects is not None:
+        track_count = len(tracked_objects)
+        algo_text = f"Tracking: {tracker_type} ({track_count} active)"
+    else:
+        algo_text = f"Tracking: {tracker_type} (0 active)"
+    
     (algo_width, algo_height), _ = cv2.getTextSize(algo_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
     cv2.rectangle(annotated_frame, (10, 10), (algo_width + 20, algo_height + 20), (0, 0, 0), -1)
     cv2.putText(annotated_frame, algo_text, (15, algo_height + 15), 
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    
+    # Add tracker type indicator in top-right
+    tracker_indicator = "🎯 OpenCV" if tracker_type == "OpenCV" else "⚡ YOLO"
+    (ind_width, ind_height), _ = cv2.getTextSize(tracker_indicator, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+    cv2.rectangle(annotated_frame, 
+                  (annotated_frame.shape[1] - ind_width - 20, 10), 
+                  (annotated_frame.shape[1] - 10, ind_height + 20), 
+                  (50, 50, 50), -1)
+    cv2.putText(annotated_frame, tracker_indicator, 
+                (annotated_frame.shape[1] - ind_width - 15, ind_height + 15), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
     
     return annotated_frame
 
@@ -1347,11 +1394,10 @@ def run_enhanced_analysis():
                             all_centroids = [(det['center_x'], det['center_y']) for det in detailed]
                             tracker.update(all_centroids, timestamp)
                             current_people = len([det for det in detailed if det['object_type'] == 'person'])
-                            # For all objects, count person-type detections but track all centroids
                             seen_ids.update(tracker.objects.keys())
 
                     elif tracker_type in ["ByteTrack (YOLO)", "BoT-SORT (YOLO)"]:
-                        # Built-in tracking (ByteTrack/BoT-SORT) - use tracked_objects from YOLO
+                        # FIXED: Properly handle YOLO tracking data and update detections
                         if track_people_only:
                             person_tracks = {tid: pos for tid, pos in tracked_objects.items()}
                             current_people = len(person_tracks)
@@ -1359,11 +1405,19 @@ def run_enhanced_analysis():
                         else:
                             current_people = len([det for det in detailed if det['object_type'] == 'person'])
                             seen_ids.update(tracked_objects.keys())
+                        
+                        # CRITICAL FIX: Update detailed detections with track IDs for visualization
+                        for det in detailed:
+                            if det['track_id'] is not None and det['object_type'] == 'person':
+                                # Ensure track_id is properly set for visualization
+                                det['tracked_by_yolo'] = True
+                                # Add to tracked_objects if not already there
+                                if det['track_id'] not in tracked_objects:
+                                    tracked_objects[det['track_id']] = (det['center_x'], det['center_y'])
                     
                     else:
                         # Fallback - just count detections without tracking
                         current_people = len([det for det in detailed if det['object_type'] == 'person'])
-                        # Generate simple IDs for unique counting
                         for i, det in enumerate([d for d in detailed if d['object_type'] == 'person']):
                             seen_ids.add(f"fallback_{processed_count}_{i}")
                     

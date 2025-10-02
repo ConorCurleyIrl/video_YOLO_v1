@@ -6,7 +6,7 @@ STREET TRAFFIC ANALYZER WITH OBJECT TRACKING
 import os
 import sys
 import subprocess
-
+import streamlit as st
 # Environment setup for cloud deployment
 os.environ['OPENCV_IO_ENABLE_JASPER'] = '1'
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
@@ -37,7 +37,6 @@ install_missing_packages()
 # Now import all required packages
 try:
     import cv2
-    import streamlit as st
     import numpy as np
     from ultralytics import YOLO
     import yt_dlp

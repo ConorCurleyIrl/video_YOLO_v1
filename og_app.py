@@ -1027,30 +1027,41 @@ def load_model(model_name):
     return YOLO(model_name)
 
 def get_stream_url(youtube_url):
-    """Extract direct video stream URL from YouTube with better error handling"""
+    """Enhanced stream extraction for cloud deployment"""
     ydl_opts = {
-        'format': 'best[ext=mp4]/best[height<=720]/best',  # Multiple fallbacks
+        'format': 'best[height<=480]/best[height<=720]/best',  # Lower quality for cloud
         'quiet': True,
         'no_warnings': True,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'user_agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         'referer': 'https://www.youtube.com/',
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-us,en;q=0.5',
+            'Sec-Fetch-Mode': 'navigate',
+        },
+        'extract_flat': False,
+        'socket_timeout': 30,  # Increased timeout for cloud
     }
+    
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(youtube_url, download=False)
             
-            # Try different URL extraction strategies
+            # Try multiple URL extraction strategies
             if 'url' in info:
                 return info['url']
             elif 'formats' in info and info['formats']:
-                # Get best available format
-                for fmt in reversed(info['formats']):
-                    if fmt.get('url') and fmt.get('vcodec') != 'none':
+                # Prefer formats that work better on cloud
+                for fmt in info['formats']:
+                    if (fmt.get('url') and 
+                        fmt.get('vcodec') != 'none' and 
+                        fmt.get('height', 0) <= 720):  # Lower quality for stability
                         return fmt['url']
             
             return None
     except Exception as e:
-        st.error(f"Error getting stream URL: {str(e)}")
+        st.error(f"Stream extraction failed: {str(e)}")
         return None
 def analyze_frame(frame, model, filters, conf_threshold, resize_factor, tracker_type, enhanced_filtering=True, nms_threshold=0.4, min_area=100):
     """

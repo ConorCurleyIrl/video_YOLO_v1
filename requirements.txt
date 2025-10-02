@@ -1,7 +1,7 @@
-opencv-python-headless
-ultralytics
-streamlit
-yt-dlp
-pandas
-pillow
-numpy
+opencv-python-headless==4.8.1.78
+ultralytics==8.0.196
+streamlit==1.28.1
+yt-dlp==2023.10.13
+pandas==2.1.1
+pillow==10.0.1
+numpy==1.24.3

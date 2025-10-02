@@ -1027,41 +1027,63 @@ def load_model(model_name):
     return YOLO(model_name)
 
 def get_stream_url(youtube_url):
-    """Enhanced stream extraction for cloud deployment"""
+    """Enhanced stream extraction with multiple fallback strategies"""
     ydl_opts = {
-        'format': 'best[height<=480]/best[height<=720]/best',  # Lower quality for cloud
+        'format': 'best[height<=720]/best[height<=480]/best',  # Prefer lower quality for stability
         'quiet': True,
         'no_warnings': True,
-        'user_agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'referer': 'https://www.youtube.com/',
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-us,en;q=0.5',
-            'Sec-Fetch-Mode': 'navigate',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
         },
         'extract_flat': False,
-        'socket_timeout': 30,  # Increased timeout for cloud
+        'socket_timeout': 30,
+        'youtube_include_dash_manifest': False,
+        'force_generic_extractor': False,
     }
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            st.info("🔄 Extracting stream information...")
             info = ydl.extract_info(youtube_url, download=False)
             
-            # Try multiple URL extraction strategies
-            if 'url' in info:
+            st.info("🔍 Analyzing available formats...")
+            
+            # Strategy 1: Look for direct URL
+            if 'url' in info and info['url']:
+                st.success("✅ Found direct stream URL")
                 return info['url']
-            elif 'formats' in info and info['formats']:
-                # Prefer formats that work better on cloud
+            
+            # Strategy 2: Search through formats for the best compatible one
+            if 'formats' in info and info['formats']:
+                st.info(f"📋 Found {len(info['formats'])} available formats")
+                
+                # Look for formats that work well with OpenCV
                 for fmt in info['formats']:
                     if (fmt.get('url') and 
                         fmt.get('vcodec') != 'none' and 
-                        fmt.get('height', 0) <= 720):  # Lower quality for stability
+                        fmt.get('protocol') in ['https', 'http'] and
+                        fmt.get('height', 0) <= 720):
+                        
+                        st.success(f"✅ Selected format: {fmt.get('format_note', 'Unknown')} ({fmt.get('height', 'Unknown')}p)")
+                        return fmt['url']
+                
+                # Fallback: try any video format
+                for fmt in info['formats']:
+                    if fmt.get('url') and fmt.get('vcodec') != 'none':
+                        st.warning("⚠️ Using fallback format")
                         return fmt['url']
             
+            st.error("❌ No compatible stream format found")
             return None
+            
     except Exception as e:
-        st.error(f"Stream extraction failed: {str(e)}")
+        st.error(f"❌ Stream extraction failed: {str(e)}")
         return None
 def analyze_frame(frame, model, filters, conf_threshold, resize_factor, tracker_type, enhanced_filtering=True, nms_threshold=0.4, min_area=100):
     """
@@ -1467,6 +1489,24 @@ def run_enhanced_analysis():
             model = load_model(model_size)
         
         # Get stream URL
+        status_placeholder.info("🔗 Extracting stream URL...")
+        stream_url = get_stream_url(youtube_url)
+        
+        if not stream_url:
+            st.error("❌ Failed to extract stream URL. Please try a different stream.")
+            st.info("💡 **Troubleshooting:**")
+            st.markdown("""
+            - ✅ Try a different YouTube live stream
+            - ✅ Some streams are geo-restricted on cloud servers
+            - ✅ The stream might not be live anymore
+            - ✅ YouTube may be blocking automated access
+            """)
+            st.session_state.analyzing = False
+            return
+        
+        st.success(f"✅ Stream URL extracted successfully!")
+        
+        # Now use the EXTRACTED URL with OpenCV
         status_placeholder.info("📹 Opening video stream...")
         
         max_retries = 3
@@ -1474,9 +1514,10 @@ def run_enhanced_analysis():
         
         for attempt in range(max_retries):
             try:
-                cap = cv2.VideoCapture(youtube_url)
+                # Use the extracted stream URL, not the original YouTube URL
+                cap = cv2.VideoCapture(stream_url)
                 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                cap.set(cv2.CAP_PROP_FPS, 30)
+                cap.set(cv2.CAP_PROP_FPS, 15)  # Lower FPS for stability
                 
                 if cap.isOpened():
                     # Test if we can read a frame
@@ -1490,25 +1531,14 @@ def run_enhanced_analysis():
                 
                 st.warning(f"⚠️ Connection attempt {attempt + 1}/{max_retries} failed")
                 if attempt < max_retries - 1:
-                    time.sleep(2)
+                    time.sleep(3)  # Longer delay between attempts
                     
             except Exception as e:
                 st.warning(f"⚠️ Stream error on attempt {attempt + 1}: {e}")
                 if cap:
                     cap.release()
                     cap = None
-        
-        if not cap or not cap.isOpened():
-            st.error("❌ Failed to open video stream after multiple attempts")
-            st.info("💡 **Try these solutions:**")
-            st.markdown("""
-            - ✅ Check if the YouTube URL is live and working
-            - ✅ Try a different YouTube live stream  
-            - ✅ Refresh the page and try again
-            - ✅ Some streams may be geo-restricted
-            """)
-            st.session_state.analyzing = False
-            return
+                time.sleep(2)
         
         
         # Initialize enhanced counters and metrics

@@ -871,6 +871,7 @@ with col1:
             placeholder="https://youtube.com/watch?v=...",
             key="url_input"
         )
+        
 
 # Sync URL with session state
 youtube_url = st.session_state.current_url if youtube_url == "" else youtube_url
@@ -1027,16 +1028,28 @@ def load_model(model_name):
     return YOLO(model_name)
 
 def get_stream_url(youtube_url):
-    """Extract direct video stream URL from YouTube"""
+    """Extract direct video stream URL from YouTube with better error handling"""
     ydl_opts = {
-        'format': 'best[ext=mp4]/best',
+        'format': 'best[ext=mp4]/best[height<=720]/best',  # Multiple fallbacks
         'quiet': True,
         'no_warnings': True,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'referer': 'https://www.youtube.com/',
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(youtube_url, download=False)
-            return info['url']
+            
+            # Try different URL extraction strategies
+            if 'url' in info:
+                return info['url']
+            elif 'formats' in info and info['formats']:
+                # Get best available format
+                for fmt in reversed(info['formats']):
+                    if fmt.get('url') and fmt.get('vcodec') != 'none':
+                        return fmt['url']
+            
+            return None
     except Exception as e:
         st.error(f"Error getting stream URL: {str(e)}")
         return None
@@ -1444,23 +1457,46 @@ def run_enhanced_analysis():
             model = load_model(model_size)
         
         # Get stream URL
-        status_placeholder.info("📡 Connecting to stream...")
-        with st.spinner("Connecting to enhanced stream analysis..."):
-            stream_url = get_stream_url(youtube_url)
-        
-        if not stream_url:
-            st.error("❌ Failed to get stream URL. Please check the YouTube URL.")
-            st.session_state.analyzing = False
-            return
-        
-        # Open video capture with enhanced settings
         status_placeholder.info("📹 Opening video stream...")
-        cap = cv2.VideoCapture(stream_url)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize buffering
-        cap.set(cv2.CAP_PROP_FPS, 30)  # Try to maintain frame rate
         
-        if not cap.isOpened():
-            st.error("❌ Failed to open video stream")
+        max_retries = 3
+        cap = None
+        
+        for attempt in range(max_retries):
+            try:
+                cap = cv2.VideoCapture(youtube_url)
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                cap.set(cv2.CAP_PROP_FPS, 30)
+                
+                if cap.isOpened():
+                    # Test if we can read a frame
+                    ret, test_frame = cap.read()
+                    if ret and test_frame is not None:
+                        st.success(f"✅ Stream connected successfully!")
+                        break
+                    else:
+                        cap.release()
+                        cap = None
+                
+                st.warning(f"⚠️ Connection attempt {attempt + 1}/{max_retries} failed")
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                    
+            except Exception as e:
+                st.warning(f"⚠️ Stream error on attempt {attempt + 1}: {e}")
+                if cap:
+                    cap.release()
+                    cap = None
+        
+        if not cap or not cap.isOpened():
+            st.error("❌ Failed to open video stream after multiple attempts")
+            st.info("💡 **Try these solutions:**")
+            st.markdown("""
+            - ✅ Check if the YouTube URL is live and working
+            - ✅ Try a different YouTube live stream  
+            - ✅ Refresh the page and try again
+            - ✅ Some streams may be geo-restricted
+            """)
             st.session_state.analyzing = False
             return
         

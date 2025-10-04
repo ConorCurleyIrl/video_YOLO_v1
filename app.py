@@ -1023,8 +1023,16 @@ with cont5:
 
 @st.cache_resource
 def load_model(model_name):
-    """Load and cache YOLO model"""
-    return YOLO(model_name)
+    """Load and cache YOLO model - download if not exists"""
+    try:
+        # Let ultralytics download the model automatically
+        model = YOLO(model_name)
+        st.success(f"✅ Model {model_name} loaded successfully")
+        return model
+    except Exception as e:
+        st.error(f"❌ Failed to load {model_name}: {e}")
+        # Fallback to smallest model
+        return YOLO('yolov8n.pt')
 
 def get_stream_url(youtube_url):
     """Enhanced stream extraction with multiple fallback strategies"""
